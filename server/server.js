@@ -6,20 +6,42 @@ const PORT = process.env.PORT || 8080;
 app.use(express.urlencoded({ extended: true }));
 
 // -----------------------------
-// 🔒 Anti-spam
+// 🔒 Anti-spam PRO
 // -----------------------------
-let lastRequest = {};
+let requests = {};
 
 function isSpam(ip) {
   let now = Date.now();
 
-  if (lastRequest[ip] && now - lastRequest[ip] < 1000) {
+  if (!requests[ip]) requests[ip] = [];
+
+  requests[ip] = requests[ip].filter(t => now - t < 5000);
+
+  requests[ip].push(now);
+
+  if (requests[ip].length > 5) {
     return true;
   }
 
-  lastRequest[ip] = now;
   return false;
 }
+
+// -----------------------------
+// 👑 ADMIN SYSTEM (hidden)
+// -----------------------------
+let ADMIN_KEY = "secret123"; // ти потім скажеш інший
+let isAdmin = false;
+
+app.get("/admin", (req, res) => {
+  let key = req.query.key;
+
+  if (key === ADMIN_KEY) {
+    isAdmin = true;
+    return res.send("👑 ADMIN MODE ACTIVATED");
+  }
+
+  res.send("⛔ Access denied");
+});
 
 // -----------------------------
 // ZetaLang Interpreter
@@ -33,9 +55,7 @@ class ZetaInterpreter {
     let output = [];
     let lines = code.split("\n");
 
-    if (lines.length > 100) {
-      return ["❌ Too much code"];
-    }
+    if (code.length > 2000) return ["❌ Code too big"];
 
     for (let line of lines) {
       line = line.trim();
@@ -93,7 +113,7 @@ class ZetaInterpreter {
 const interpreter = new ZetaInterpreter();
 
 // -----------------------------
-// IDE
+// IDE ULTRA
 // -----------------------------
 app.get("/", (req, res) => {
   res.send(`
@@ -107,12 +127,9 @@ app.get("/", (req, res) => {
 <style>
 body { margin:0; background:#1e1e1e; color:white; font-family:sans-serif; display:flex; }
 
-#left {
-  width: 75%;
-}
-
+#left { width:75%; }
 #right {
-  width: 25%;
+  width:25%;
   background:#111;
   padding:10px;
   border-left:2px solid #333;
@@ -121,15 +138,16 @@ body { margin:0; background:#1e1e1e; color:white; font-family:sans-serif; displa
 #topbar {
   background:#333;
   padding:10px;
+  display:flex;
+  gap:5px;
 }
 
 button {
   background:#007acc;
   border:none;
-  padding:8px 15px;
+  padding:8px 12px;
   color:white;
   cursor:pointer;
-  margin-right:5px;
 }
 
 #editor { height:60vh; }
@@ -139,7 +157,12 @@ button {
   padding:10px;
   overflow:auto;
   border-top:2px solid #333;
-  font-family:monospace;
+}
+
+.file {
+  cursor:pointer;
+  padding:5px;
+  border-bottom:1px solid #333;
 }
 </style>
 </head>
@@ -149,9 +172,9 @@ button {
 <div id="left">
   <div id="topbar">
     <button onclick="runCode()">▶ Run</button>
-    <button onclick="clearOutput()">🧹 Clear</button>
-    <button onclick="saveCode()">💾 Save</button>
-    <button onclick="loadCode()">📂 Load</button>
+    <button onclick="toggleAuto()">⚡ Auto</button>
+    <button onclick="newFile()">📄 New</button>
+    <button onclick="saveFile()">💾 Save</button>
   </div>
 
   <div id="editor"></div>
@@ -159,19 +182,24 @@ button {
 </div>
 
 <div id="right">
+  <h3>📁 Files</h3>
+  <div id="files"></div>
+
   <h3>📖 Commands</h3>
   <pre>
-set x = 5        → створити змінну
-add x 10         → додати
-say "text"       → вивести текст
-show x           → показати змінну
-if x > 10 say "" → умова
-loop 3 say ""    → цикл
+set x = 5
+add x 10
+say "text"
+show x
+if x > 10 say ""
+loop 3 say ""
   </pre>
 </div>
 
 <script>
 let editor;
+let autoRun = false;
+let currentFile = "main.zeta";
 
 require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.44.0/min/vs' }});
 require(["vs/editor/editor.main"], function () {
@@ -189,42 +217,64 @@ require(["vs/editor/editor.main"], function () {
   });
 
   editor = monaco.editor.create(document.getElementById("editor"), {
-    value: \`# ZetaLang Demo
-set x = 5
-add x 10
-if x > 10 say "BIG"
-loop 3 say "🔥"
-show x\`,
+    value: "",
     language: "zetalang",
     theme: "vs-dark"
   });
+
+  loadFiles();
 });
 
-async function runCode() {
-  let code = editor.getValue();
-
-  let res = await fetch("/run", {
+function runCode() {
+  fetch("/run", {
     method: "POST",
     headers: {"Content-Type":"application/x-www-form-urlencoded"},
-    body: "code=" + encodeURIComponent(code)
-  });
-
-  let text = await res.text();
-  document.getElementById("output").innerText = text;
+    body: "code=" + encodeURIComponent(editor.getValue())
+  })
+  .then(r => r.text())
+  .then(t => document.getElementById("output").innerText = t);
 }
 
-function clearOutput() {
-  document.getElementById("output").innerText = "";
+function toggleAuto() {
+  autoRun = !autoRun;
 }
 
-function saveCode() {
-  localStorage.setItem("zetalang_code", editor.getValue());
+function newFile() {
+  let name = prompt("File name:");
+  localStorage.setItem(name, "");
+  loadFiles();
 }
 
-function loadCode() {
-  let code = localStorage.getItem("zetalang_code");
-  if (code) editor.setValue(code);
+function saveFile() {
+  localStorage.setItem(currentFile, editor.getValue());
 }
+
+function loadFiles() {
+  let filesDiv = document.getElementById("files");
+  filesDiv.innerHTML = "";
+
+  for (let i=0;i<localStorage.length;i++) {
+    let key = localStorage.key(i);
+
+    let div = document.createElement("div");
+    div.className = "file";
+    div.innerText = key;
+
+    div.onclick = () => {
+      currentFile = key;
+      editor.setValue(localStorage.getItem(key));
+    };
+
+    filesDiv.appendChild(div);
+  }
+}
+
+setInterval(() => {
+  if (autoRun) runCode();
+}, 1000);
+
+// ADMIN check
+fetch("/admin?key=test");
 </script>
 
 </body>
@@ -233,14 +283,10 @@ function loadCode() {
 });
 
 // -----------------------------
-// RUN CODE
-// -----------------------------
 app.post("/run", (req, res) => {
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
 
-  if (isSpam(ip)) {
-    return res.send("⛔ Too fast, slow down!");
-  }
+  if (isSpam(ip)) return res.send("⛔ Too many requests");
 
   try {
     let result = interpreter.run(req.body.code);
