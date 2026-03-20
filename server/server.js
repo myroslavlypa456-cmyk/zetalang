@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 8080;
 app.use(express.urlencoded({ extended: true }));
 
 // -----------------------------
-// ZetaLang Interpreter (JS)
+// ZetaLang Interpreter
 // -----------------------------
 class ZetaInterpreter {
   constructor() {
@@ -73,7 +73,7 @@ class ZetaInterpreter {
 const interpreter = new ZetaInterpreter();
 
 // -----------------------------
-// IDE PAGE
+// IDE (VS Code style)
 // -----------------------------
 app.get("/", (req, res) => {
   res.send(`
@@ -82,34 +82,79 @@ app.get("/", (req, res) => {
 <head>
 <title>ZetaLang IDE</title>
 
+<script src="https://unpkg.com/monaco-editor@0.44.0/min/vs/loader.js"></script>
+
 <style>
-body { background:#1e1e1e; color:white; font-family:monospace; margin:0; }
-#editor { width:100%; height:60vh; background:#1e1e1e; color:#00ff9c; }
-#output { height:30vh; background:black; padding:10px; }
-button { background:#007acc; color:white; padding:10px; border:none; margin:10px; }
+body { margin:0; background:#1e1e1e; color:white; font-family:sans-serif; }
+
+#topbar {
+  background:#333;
+  padding:10px;
+}
+
+button {
+  background:#007acc;
+  border:none;
+  padding:8px 15px;
+  color:white;
+  cursor:pointer;
+  margin-right:5px;
+}
+
+#editor { height:60vh; }
+#output {
+  height:30vh;
+  background:black;
+  padding:10px;
+  overflow:auto;
+  border-top:2px solid #333;
+  font-family:monospace;
+}
 </style>
 </head>
 
 <body>
 
-<h2>🚀 ZetaLang IDE</h2>
+<div id="topbar">
+  <button onclick="runCode()">▶ Run</button>
+  <button onclick="saveCode()">💾 Save</button>
+  <button onclick="loadCode()">📂 Load</button>
+</div>
 
-<textarea id="editor">
-set x = 5
-add x 10
-if x > 10 say "BIG"
-loop 3 say "🔥"
-show x
-</textarea>
-
-<br>
-<button onclick="runCode()">Run</button>
-
+<div id="editor"></div>
 <div id="output"></div>
 
 <script>
+let editor;
+
+require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.44.0/min/vs' }});
+require(["vs/editor/editor.main"], function () {
+
+  monaco.languages.register({ id: "zetalang" });
+
+  monaco.languages.setMonarchTokensProvider("zetalang", {
+    tokenizer: {
+      root: [
+        [/\\b(set|add|say|if|loop|show)\\b/, "keyword"],
+        [/".*?"/, "string"],
+        [/\\d+/, "number"]
+      ]
+    }
+  });
+
+  editor = monaco.editor.create(document.getElementById("editor"), {
+    value: \`set x = 5
+add x 10
+if x > 10 say "BIG"
+loop 3 say "🔥"
+show x\`,
+    language: "zetalang",
+    theme: "vs-dark"
+  });
+});
+
 async function runCode() {
-  let code = document.getElementById("editor").value;
+  let code = editor.getValue();
 
   let res = await fetch("/run", {
     method: "POST",
@@ -121,7 +166,14 @@ async function runCode() {
   document.getElementById("output").innerText = text;
 }
 
-window.onload = runCode;
+function saveCode() {
+  localStorage.setItem("zetalang_code", editor.getValue());
+}
+
+function loadCode() {
+  let code = localStorage.getItem("zetalang_code");
+  if (code) editor.setValue(code);
+}
 </script>
 
 </body>
