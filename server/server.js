@@ -4,299 +4,225 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
 // -----------------------------
-// 🔒 Anti-spam PRO
-// -----------------------------
-let requests = {};
+// 🧠 STORAGE (тимчасово)
+let users = {};
+let sessions = {};
+let messages = [];
 
-function isSpam(ip) {
+// -----------------------------
+// 🔒 Anti-spam
+let lastReq = {};
+function spam(ip) {
   let now = Date.now();
-
-  if (!requests[ip]) requests[ip] = [];
-
-  requests[ip] = requests[ip].filter(t => now - t < 5000);
-
-  requests[ip].push(now);
-
-  if (requests[ip].length > 5) {
-    return true;
-  }
-
+  if (lastReq[ip] && now - lastReq[ip] < 500) return true;
+  lastReq[ip] = now;
   return false;
 }
 
 // -----------------------------
-// 👑 ADMIN SYSTEM (hidden)
-// -----------------------------
-let ADMIN_KEY = "secret123"; // ти потім скажеш інший
+// 👑 ADMIN
 let isAdmin = false;
 
-app.get("/admin", (req, res) => {
-  let key = req.query.key;
-
-  if (key === ADMIN_KEY) {
-    isAdmin = true;
-    return res.send("👑 ADMIN MODE ACTIVATED");
-  }
-
-  res.send("⛔ Access denied");
-});
-
 // -----------------------------
-// ZetaLang Interpreter
-// -----------------------------
-class ZetaInterpreter {
-  constructor() {
-    this.vars = {};
-  }
+// 🧠 ZetaLang
+class Zeta {
+  constructor(){ this.vars = {}; }
 
-  run(code) {
-    let output = [];
+  run(code){
+    let out = [];
     let lines = code.split("\n");
 
-    if (code.length > 2000) return ["❌ Code too big"];
+    for(let l of lines){
+      l = l.trim();
+      if(!l) continue;
 
-    for (let line of lines) {
-      line = line.trim();
-      if (!line || line.startsWith("#")) continue;
-
-      if (line.startsWith("say")) {
-        let text = line.split('"')[1];
-        output.push(text);
+      if(l === "log Adm456"){
+        isAdmin = true;
+        out.push("👑 ADMIN MODE");
+        continue;
       }
 
-      else if (line.startsWith("set")) {
-        let parts = line.split(" ");
-        let name = parts[1];
-        let value = parts[3];
-        this.vars[name] = isNaN(value) ? value : Number(value);
+      if(l.startsWith("say")){
+        out.push(l.split('"')[1]);
       }
 
-      else if (line.startsWith("add")) {
-        let [_, name, value] = line.split(" ");
-        this.vars[name] += Number(value);
+      if(l.startsWith("set")){
+        let p = l.split(" ");
+        this.vars[p[1]] = Number(p[3]);
       }
 
-      else if (line.startsWith("show")) {
-        let [_, name] = line.split(" ");
-        output.push(this.vars[name] ?? "undefined");
+      if(l.startsWith("add")){
+        let [_,n,v] = l.split(" ");
+        this.vars[n]+=Number(v);
       }
 
-      else if (line.startsWith("if")) {
-        let parts = line.split(" ");
-        let name = parts[1];
-        let op = parts[2];
-        let value = Number(parts[3]);
-
-        if (op === ">" && this.vars[name] > value) {
-          let text = line.split('"')[1];
-          output.push(text);
-        }
-      }
-
-      else if (line.startsWith("loop")) {
-        let parts = line.split(" ");
-        let count = Number(parts[1]);
-
-        for (let i = 0; i < count; i++) {
-          let text = line.split('"')[1];
-          output.push(text);
-        }
+      if(l.startsWith("show")){
+        let [_,n] = l.split(" ");
+        out.push(this.vars[n]);
       }
     }
 
-    return output.join("\n");
+    return out.join("\n");
   }
 }
-
-const interpreter = new ZetaInterpreter();
+const z = new Zeta();
 
 // -----------------------------
-// IDE ULTRA
+// 🔐 AUTH
+app.post("/register",(req,res)=>{
+  let {user,pass}=req.body;
+  if(users[user]) return res.send("❌ exists");
+  users[user]=pass;
+  res.send("ok");
+});
+
+app.post("/login",(req,res)=>{
+  let {user,pass}=req.body;
+  if(users[user]===pass){
+    let token=Math.random()+"";
+    sessions[token]=user;
+    res.send(token);
+  } else res.send("❌");
+});
+
 // -----------------------------
-app.get("/", (req, res) => {
-  res.send(`
+// 💬 CHAT
+app.get("/chat",(req,res)=>{
+  res.json(messages);
+});
+
+app.post("/chat",(req,res)=>{
+  let {token,msg}=req.body;
+  let user=sessions[token];
+
+  if(!user) return res.send("❌ login");
+
+  messages.push(user+": "+msg);
+  if(messages.length>50) messages.shift();
+
+  res.send("ok");
+});
+
+// -----------------------------
+// RUN CODE
+app.post("/run",(req,res)=>{
+  let ip=req.headers["x-forwarded-for"]||req.socket.remoteAddress;
+  if(spam(ip)) return res.send("⛔ spam");
+
+  try{
+    res.send(z.run(req.body.code));
+  }catch(e){
+    res.send("error");
+  }
+});
+
+// -----------------------------
+// 🌐 FRONTEND
+app.get("/",(req,res)=>{
+res.send(`
 <!DOCTYPE html>
 <html>
 <head>
 <title>ZetaLang IDE</title>
-
 <script src="https://unpkg.com/monaco-editor@0.44.0/min/vs/loader.js"></script>
 
 <style>
-body { margin:0; background:#1e1e1e; color:white; font-family:sans-serif; display:flex; }
-
-#left { width:75%; }
-#right {
-  width:25%;
-  background:#111;
-  padding:10px;
-  border-left:2px solid #333;
-}
-
-#topbar {
-  background:#333;
-  padding:10px;
-  display:flex;
-  gap:5px;
-}
-
-button {
-  background:#007acc;
-  border:none;
-  padding:8px 12px;
-  color:white;
-  cursor:pointer;
-}
-
-#editor { height:60vh; }
-#output {
-  height:30vh;
-  background:black;
-  padding:10px;
-  overflow:auto;
-  border-top:2px solid #333;
-}
-
-.file {
-  cursor:pointer;
-  padding:5px;
-  border-bottom:1px solid #333;
-}
+body{margin:0;display:flex;height:100vh;background:#1e1e1e;color:white;}
+#side{width:200px;background:#111;padding:10px;}
+#main{flex:1;display:flex;flex-direction:column;}
+#editor{flex:1;}
+#output{height:120px;background:black;}
+#chat{width:250px;background:#000;padding:5px;}
 </style>
 </head>
 
 <body>
 
-<div id="left">
-  <div id="topbar">
-    <button onclick="runCode()">▶ Run</button>
-    <button onclick="toggleAuto()">⚡ Auto</button>
-    <button onclick="newFile()">📄 New</button>
-    <button onclick="saveFile()">💾 Save</button>
-  </div>
-
-  <div id="editor"></div>
-  <div id="output"></div>
+<div id="side">
+<h3>👤 Account</h3>
+<input id="user" placeholder="login"><br>
+<input id="pass" placeholder="pass" type="password"><br>
+<button onclick="reg()">Register</button>
+<button onclick="login()">Login</button>
 </div>
 
-<div id="right">
-  <h3>📁 Files</h3>
-  <div id="files"></div>
+<div id="main">
+<div id="editor"></div>
+<div id="output"></div>
+<button onclick="run()">Run</button>
+</div>
 
-  <h3>📖 Commands</h3>
-  <pre>
-set x = 5
-add x 10
-say "text"
-show x
-if x > 10 say ""
-loop 3 say ""
-  </pre>
+<div id="chat">
+<h3>💬 Chat</h3>
+<div id="msgs"></div>
+<input id="msg">
+<button onclick="send()">Send</button>
 </div>
 
 <script>
-let editor;
-let autoRun = false;
-let currentFile = "main.zeta";
+let editor,token="";
 
-require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.44.0/min/vs' }});
-require(["vs/editor/editor.main"], function () {
+require.config({ paths:{vs:'https://unpkg.com/monaco-editor@0.44.0/min/vs'}});
+require(["vs/editor/editor.main"],()=>{
 
-  monaco.languages.register({ id: "zetalang" });
-
-  monaco.languages.setMonarchTokensProvider("zetalang", {
-    tokenizer: {
-      root: [
-        [/\\b(set|add|say|if|loop|show)\\b/, "keyword"],
-        [/".*?"/, "string"],
-        [/\\d+/, "number"]
-      ]
-    }
-  });
-
-  editor = monaco.editor.create(document.getElementById("editor"), {
-    value: "",
-    language: "zetalang",
-    theme: "vs-dark"
-  });
-
-  loadFiles();
+editor=monaco.editor.create(document.getElementById("editor"),{
+value:"set x = 5",
+language:"javascript",
+theme:"vs-dark"
+});
 });
 
-function runCode() {
-  fetch("/run", {
-    method: "POST",
-    headers: {"Content-Type":"application/x-www-form-urlencoded"},
-    body: "code=" + encodeURIComponent(editor.getValue())
-  })
-  .then(r => r.text())
-  .then(t => document.getElementById("output").innerText = t);
+// RUN
+async function run(){
+let code=editor.getValue();
+let r=await fetch("/run",{method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({code})
+});
+let t=await r.text();
+output.innerText=t;
+
+if(t.includes("ADMIN")) alert("👑 ADMIN");
 }
 
-function toggleAuto() {
-  autoRun = !autoRun;
+// AUTH
+async function reg(){
+await fetch("/register",{method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({user:user.value,pass:pass.value})
+});
 }
 
-function newFile() {
-  let name = prompt("File name:");
-  localStorage.setItem(name, "");
-  loadFiles();
+async function login(){
+let r=await fetch("/login",{method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({user:user.value,pass:pass.value})
+});
+token=await r.text();
 }
 
-function saveFile() {
-  localStorage.setItem(currentFile, editor.getValue());
+// CHAT
+async function send(){
+await fetch("/chat",{method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({token,msg:msg.value})
+});
 }
 
-function loadFiles() {
-  let filesDiv = document.getElementById("files");
-  filesDiv.innerHTML = "";
+setInterval(async()=>{
+let r=await fetch("/chat");
+let data=await r.json();
+msgs.innerText=data.join("\\n");
+},1000);
 
-  for (let i=0;i<localStorage.length;i++) {
-    let key = localStorage.key(i);
-
-    let div = document.createElement("div");
-    div.className = "file";
-    div.innerText = key;
-
-    div.onclick = () => {
-      currentFile = key;
-      editor.setValue(localStorage.getItem(key));
-    };
-
-    filesDiv.appendChild(div);
-  }
-}
-
-setInterval(() => {
-  if (autoRun) runCode();
-}, 1000);
-
-// ADMIN check
-fetch("/admin?key=test");
 </script>
-
 </body>
 </html>
 `);
 });
 
 // -----------------------------
-app.post("/run", (req, res) => {
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-
-  if (isSpam(ip)) return res.send("⛔ Too many requests");
-
-  try {
-    let result = interpreter.run(req.body.code);
-    res.send(result);
-  } catch (e) {
-    res.send("Error: " + e.message);
-  }
-});
-
-// -----------------------------
-app.listen(PORT, () => {
-  console.log("🔥 SERVER STARTED " + PORT);
-});
+app.listen(PORT,()=>console.log("🔥 RUNNING"));
