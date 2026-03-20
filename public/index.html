@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ZetaLang IDE 💀</title>
+  <style>
+    body { background: #111; color: #0f0; font-family: monospace; }
+    textarea { width: 100%; height: 200px; background: black; color: lime; }
+    button { margin: 5px; }
+  </style>
+</head>
+<body>
+
+<h1>ZetaLang IDE 💀</h1>
+
+<input id="login" placeholder="login">
+<input id="password" placeholder="password" type="password">
+
+<br>
+
+<button onclick="register()">REGISTER</button>
+<button onclick="loginUser()">LOGIN</button>
+<button onclick="adminLogin()">ADMIN 🔐</button>
+
+<hr>
+
+<textarea id="code">say "Привіт"</textarea>
+
+<br>
+
+<button onclick="runCode()">RUN</button>
+<button onclick="saveCode()">SAVE</button>
+<button onclick="loadCode()">LOAD</button>
+
+<pre id="output"></pre>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+
+let currentUser = null;
+
+function register() {
+  let login = document.getElementById("login").value;
+  let password = document.getElementById("password").value;
+
+  socket.emit("register", {login, password});
+}
+
+function loginUser() {
+  let login = document.getElementById("login").value;
+  let password = document.getElementById("password").value;
+
+  socket.emit("login", {login, password});
+}
+
+function adminLogin() {
+  let pass = prompt("ADMIN PASSWORD");
+
+  socket.emit("adminLogin", pass);
+}
+
+function runCode() {
+  let code = document.getElementById("code").value;
+  socket.emit("runCode", code);
+}
+
+function saveCode() {
+  socket.emit("saveCode", document.getElementById("code").value);
+}
+
+function loadCode() {
+  socket.emit("loadCode");
+}
+
+socket.on("output", (data) => {
+  document.getElementById("output").textContent = data;
+});
+
+socket.on("loginSuccess", (user) => {
+  currentUser = user;
+  alert("Увійшов як " + user);
+});
+
+socket.on("loginFail", () => alert("❌ login error"));
+socket.on("registerOk", () => alert("✅ зареєстровано"));
+socket.on("adminOk", () => alert("👑 ADMIN"));
+socket.on("banned", () => alert("🚫 ТИ ЗАБАНЕНИЙ"));
+
+socket.on("loadCode", (code) => {
+  document.getElementById("code").value = code;
+});
+</script>
+
+</body>
+</html>
