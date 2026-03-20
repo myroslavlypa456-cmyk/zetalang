@@ -6,6 +6,22 @@ const PORT = process.env.PORT || 8080;
 app.use(express.urlencoded({ extended: true }));
 
 // -----------------------------
+// 🔒 Anti-spam
+// -----------------------------
+let lastRequest = {};
+
+function isSpam(ip) {
+  let now = Date.now();
+
+  if (lastRequest[ip] && now - lastRequest[ip] < 1000) {
+    return true;
+  }
+
+  lastRequest[ip] = now;
+  return false;
+}
+
+// -----------------------------
 // ZetaLang Interpreter
 // -----------------------------
 class ZetaInterpreter {
@@ -16,6 +32,10 @@ class ZetaInterpreter {
   run(code) {
     let output = [];
     let lines = code.split("\n");
+
+    if (lines.length > 100) {
+      return ["❌ Too much code"];
+    }
 
     for (let line of lines) {
       line = line.trim();
@@ -73,7 +93,7 @@ class ZetaInterpreter {
 const interpreter = new ZetaInterpreter();
 
 // -----------------------------
-// IDE (VS Code style)
+// IDE
 // -----------------------------
 app.get("/", (req, res) => {
   res.send(`
@@ -85,7 +105,18 @@ app.get("/", (req, res) => {
 <script src="https://unpkg.com/monaco-editor@0.44.0/min/vs/loader.js"></script>
 
 <style>
-body { margin:0; background:#1e1e1e; color:white; font-family:sans-serif; }
+body { margin:0; background:#1e1e1e; color:white; font-family:sans-serif; display:flex; }
+
+#left {
+  width: 75%;
+}
+
+#right {
+  width: 25%;
+  background:#111;
+  padding:10px;
+  border-left:2px solid #333;
+}
 
 #topbar {
   background:#333;
@@ -115,14 +146,29 @@ button {
 
 <body>
 
-<div id="topbar">
-  <button onclick="runCode()">▶ Run</button>
-  <button onclick="saveCode()">💾 Save</button>
-  <button onclick="loadCode()">📂 Load</button>
+<div id="left">
+  <div id="topbar">
+    <button onclick="runCode()">▶ Run</button>
+    <button onclick="clearOutput()">🧹 Clear</button>
+    <button onclick="saveCode()">💾 Save</button>
+    <button onclick="loadCode()">📂 Load</button>
+  </div>
+
+  <div id="editor"></div>
+  <div id="output"></div>
 </div>
 
-<div id="editor"></div>
-<div id="output"></div>
+<div id="right">
+  <h3>📖 Commands</h3>
+  <pre>
+set x = 5        → створити змінну
+add x 10         → додати
+say "text"       → вивести текст
+show x           → показати змінну
+if x > 10 say "" → умова
+loop 3 say ""    → цикл
+  </pre>
+</div>
 
 <script>
 let editor;
@@ -143,7 +189,8 @@ require(["vs/editor/editor.main"], function () {
   });
 
   editor = monaco.editor.create(document.getElementById("editor"), {
-    value: \`set x = 5
+    value: \`# ZetaLang Demo
+set x = 5
 add x 10
 if x > 10 say "BIG"
 loop 3 say "🔥"
@@ -166,6 +213,10 @@ async function runCode() {
   document.getElementById("output").innerText = text;
 }
 
+function clearOutput() {
+  document.getElementById("output").innerText = "";
+}
+
 function saveCode() {
   localStorage.setItem("zetalang_code", editor.getValue());
 }
@@ -185,6 +236,12 @@ function loadCode() {
 // RUN CODE
 // -----------------------------
 app.post("/run", (req, res) => {
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+
+  if (isSpam(ip)) {
+    return res.send("⛔ Too fast, slow down!");
+  }
+
   try {
     let result = interpreter.run(req.body.code);
     res.send(result);
