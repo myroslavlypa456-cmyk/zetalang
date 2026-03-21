@@ -1,51 +1,78 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ZetaLang Chat</title>
-  <style>
-    body { background:#111; color:#0f0; font-family:monospace; }
-    #chat { height:300px; overflow:auto; border:1px solid #0f0; padding:5px; }
-  </style>
+<meta charset="UTF-8">
+<title>ZetaLang</title>
+<style>
+body { margin:0; background:#1e1e1e; color:white; font-family:sans-serif; display:flex; }
+#sidebar { width:200px; background:#2c2c2c; padding:10px; }
+#main { flex:1; display:flex; flex-direction:column; }
+#chat { flex:1; overflow:auto; padding:10px; }
+#input { display:flex; }
+input { flex:1; }
+canvas { background:black; }
+</style>
 </head>
 <body>
 
-<h2>💬 ZetaLang Chat</h2>
-<div>👥 Онлайн: <span id="online">0</span></div>
+<div id="sidebar">
+  👥 Онлайн: <span id="online">0</span>
+  <div id="users"></div>
 
-<input id="name" placeholder="нік"><br><br>
-<button onclick="join()">Увійти</button>
+  <hr>
 
-<div id="chat"></div>
+  <h3>🎮 Clicker</h3>
+  <button onclick="score++">+1</button>
+  <div id="score">0</div>
 
-<input id="msg" placeholder="повідомлення">
-<button onclick="send()">Send</button>
+  <h3>🐍 Snake</h3>
+  <canvas id="snake" width="150" height="150"></canvas>
+</div>
+
+<div id="main">
+  <div id="chat"></div>
+  <div id="input">
+    <input id="msg">
+    <button onclick="send()">Send</button>
+  </div>
+</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
+let username = prompt("нік") || "Guest";
+socket.emit("join", username);
 
-function join() {
-  const name = document.getElementById("name").value;
-  socket.emit("join", name);
-}
-
+// чат
 function send() {
-  const msg = document.getElementById("msg").value;
-  socket.emit("message", msg);
+  socket.emit("message", msg.value);
+  msg.value = "";
 }
 
-socket.on("message", (msg) => {
-  const chat = document.getElementById("chat");
-  chat.innerHTML += "<div>" + msg + "</div>";
+socket.on("message", m => {
+  chat.innerHTML += "<div>"+m+"</div>";
 });
 
-socket.on("online", (count) => {
-  document.getElementById("online").innerText = count;
+socket.on("online", c => online.innerText = c);
+
+socket.on("users", list => {
+  users.innerHTML = list.map(u => "<div>"+u+"</div>").join("");
 });
 
-socket.on("clear", () => {
-  document.getElementById("chat").innerHTML = "";
-});
+// clicker
+let score = 0;
+setInterval(()=>scoreEl(),500);
+function scoreEl(){document.getElementById("score").innerText=score}
+
+// snake (простий)
+let c = document.getElementById("snake");
+let ctx = c.getContext("2d");
+let x=10,y=10;
+setInterval(()=>{
+  ctx.fillStyle="black"; ctx.fillRect(0,0,150,150);
+  ctx.fillStyle="lime"; ctx.fillRect(x,y,10,10);
+  x+=10; if(x>150)x=0;
+},200);
 </script>
 
 </body>

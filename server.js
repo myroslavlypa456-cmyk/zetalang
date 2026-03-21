@@ -1,64 +1,88 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const fs = require("fs");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+app.use(express.json());
 app.use(express.static("public"));
 
-let users = [];
-let messagesLimit = {};
+// ===== БАЗА =====
+const DB_FILE = "db.json";
+if (!fs.existsSync(DB_FILE)) {
+  fs.writeFileSync(DB_FILE, JSON.stringify({ users: [] }));
+}
+const db = JSON.parse(fs.readFileSync(DB_FILE));
 
+function saveDB() {
+  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+}
+
+// ===== AUTH =====
+app.post("/register", (req, res) => {
+  const { login, password } = req.body;
+
+  if (db.users.find(u => u.login === login)) {
+    return res.json({ ok: false, msg: "Вже існує" });
+  }
+
+  db.users.push({ login, password });
+  saveDB();
+
+  res.json({ ok: true });
+});
+
+app.post("/login", (req, res) => {
+  const { login, password } = req.body;
+
+  const user = db.users.find(u => u.login === login && u.password === password);
+
+  if (!user) return res.json({ ok: false });
+
+  res.json({ ok: true });
+});
+
+// ===== ОНЛАЙН =====
+let sockets = new Map(); // id -> user
+
+// ===== ЧАТ =====
 io.on("connection", (socket) => {
   console.log("🟢 connect");
 
   socket.on("join", (username) => {
-    socket.username = username;
+    if (sockets.has(socket.id)) return; // 🔥 фікс накрутки
+
+    socket.username = username || "Guest";
     socket.isAdmin = false;
 
-    users.push({ id: socket.id, username });
+    sockets.set(socket.id, socket.username);
 
-    io.emit("users", users);
-    io.emit("online", users.length);
+    io.emit("online", sockets.size);
+    io.emit("users", Array.from(sockets.values()));
   });
 
-  socket.on("message", (msg) => {
-    // 🔥 анти-спам
-    if (!messagesLimit[socket.id]) messagesLimit[socket.id] = 0;
-    messagesLimit[socket.id]++;
+  let spam = 0;
 
-    if (messagesLimit[socket.id] > 5) {
-      socket.emit("message", "🚫 не спамь");
+  socket.on("message", (msg) => {
+    spam++;
+    if (spam > 5) {
+      socket.emit("message", "🚫 анти-спам");
       return;
     }
+    setTimeout(() => spam = 0, 3000);
 
-    setTimeout(() => {
-      messagesLimit[socket.id] = 0;
-    }, 3000);
-
-    // 👑 адмін секрет
     if (msg === "log Adm456") {
       socket.isAdmin = true;
-      socket.emit("message", "👑 ТИ АДМІН");
       socket.emit("admin", true);
-      return;
-    }
-
-    // 🧠 команди адміна
-    if (socket.isAdmin && msg === "/help") {
-      socket.emit("message", "👑 команди: /online /clear");
+      socket.emit("message", "👑 ти адмін");
       return;
     }
 
     if (socket.isAdmin && msg === "/online") {
-      socket.emit("message", "👥 онлайн: " + users.length);
-      return;
-    }
-
-    if (socket.isAdmin && msg === "/clear") {
-      io.emit("clear");
+      socket.emit("message", "👥 " + sockets.size);
       return;
     }
 
@@ -66,14 +90,27 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    users = users.filter(u => u.id !== socket.id);
-    io.emit("users", users);
-    io.emit("online", users.length);
+    sockets.delete(socket.id);
+    io.emit("online", sockets.size);
+    io.emit("users", Array.from(sockets.values()));
   });
 });
 
-const PORT = process.env.PORT || 3000;
+// ===== ТВОЯ МОВА =====
+app.post("/run", (req, res) => {
+  const { code } = req.body;
 
+  // 🔥 тут можна парсити zetalang
+  // поки демо:
+  if (code.includes("print")) {
+    return res.json({ output: "👉 " + code.replace("print", "") });
+  }
+
+  res.json({ output: "❌ невідома команда" });
+});
+
+// ===== PORT =====
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log("🔥 SERVER WORKING ON " + PORT);
+  console.log("🔥 SERVER " + PORT);
 });
