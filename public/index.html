@@ -1,36 +1,52 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ZetaLang IDE</title>
-  <link rel="stylesheet" href="style.css">
+  <title>ZetaLang Chat</title>
+  <style>
+    body { background:#111; color:#0f0; font-family:monospace; }
+    #chat { height:300px; overflow:auto; border:1px solid #0f0; padding:5px; }
+  </style>
 </head>
 <body>
 
-<header>⚡ ZetaLang IDE</header>
+<h2>💬 ZetaLang Chat</h2>
+<div>👥 Онлайн: <span id="online">0</span></div>
 
-<div>
-  <input id="login" placeholder="login">
-  <input id="password" type="password" placeholder="password">
-  <button onclick="register()">REG</button>
-  <button onclick="loginUser()">LOGIN</button>
-</div>
+<input id="name" placeholder="нік"><br><br>
+<button onclick="join()">Увійти</button>
 
-<div class="container">
-  <div class="editor">
-    <textarea id="code">say "Hello world"</textarea>
-    <br>
-    <button onclick="runCode()">RUN</button>
-    <button onclick="saveCode()">SAVE</button>
-    <button onclick="loadCode()">LOAD</button>
-  </div>
+<div id="chat"></div>
 
-  <div class="output">
-    <pre id="output"></pre>
-  </div>
-</div>
+<input id="msg" placeholder="повідомлення">
+<button onclick="send()">Send</button>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="app.js"></script>
+<script>
+const socket = io();
+
+function join() {
+  const name = document.getElementById("name").value;
+  socket.emit("join", name);
+}
+
+function send() {
+  const msg = document.getElementById("msg").value;
+  socket.emit("message", msg);
+}
+
+socket.on("message", (msg) => {
+  const chat = document.getElementById("chat");
+  chat.innerHTML += "<div>" + msg + "</div>";
+});
+
+socket.on("online", (count) => {
+  document.getElementById("online").innerText = count;
+});
+
+socket.on("clear", () => {
+  document.getElementById("chat").innerHTML = "";
+});
+</script>
 
 </body>
 </html>
