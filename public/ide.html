@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>ZetaLang IDE</title>
+
+<style>
+body {
+  margin:0;
+  font-family: monospace;
+  background:#0d1117;
+  color:white;
+}
+
+header {
+  background:#161b22;
+  padding:10px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+h2 {
+  margin:0;
+  color:#00ff9c;
+}
+
+button {
+  background:#00ff9c;
+  border:none;
+  padding:8px 16px;
+  cursor:pointer;
+  font-weight:bold;
+}
+
+button:hover {
+  background:#00cc7a;
+}
+
+#editor {
+  width:100%;
+  height:55vh;
+  background:#0d1117;
+  color:#00ff9c;
+  border:none;
+  padding:10px;
+  font-size:15px;
+  outline:none;
+}
+
+#panel {
+  display:flex;
+  gap:10px;
+  padding:10px;
+  background:#161b22;
+}
+
+#input {
+  flex:1;
+  padding:8px;
+  background:#0d1117;
+  border:1px solid #333;
+  color:white;
+}
+
+#output {
+  height:30vh;
+  background:black;
+  padding:10px;
+  overflow:auto;
+  border-top:2px solid #333;
+  white-space:pre-wrap;
+}
+
+#examples {
+  background:#111;
+  padding:10px;
+  border-top:1px solid #333;
+}
+
+.example {
+  cursor:pointer;
+  color:#00ff9c;
+  margin-bottom:5px;
+}
+
+.example:hover {
+  text-decoration:underline;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h2>🚀 ZetaLang IDE</h2>
+  <button onclick="run()">▶ Run (Ctrl+Enter)</button>
+  <button onclick="clearOutput()">🧹 Clear</button>
+</header>
+
+<textarea id="editor">
+# DEMO
+
+set x = 5
+add x 10
+
+if x > 10 say "BIG" else say "SMALL"
+
+loop 3 say "🔥"
+
+random r 1 100
+say "random = {r}"
+
+input name
+say "hello {name}"
+
+func hi
+say "FUNC WORKS"
+end
+
+call hi
+
+show x
+</textarea>
+
+<div id="panel">
+  <input id="input" placeholder="👉 input value (для input команды)">
+</div>
+
+<div id="output"></div>
+
+<div id="examples">
+  <b>📚 Examples:</b>
+
+  <div class="example" onclick="loadExample(1)">👉 variables</div>
+  <div class="example" onclick="loadExample(2)">👉 loops</div>
+  <div class="example" onclick="loadExample(3)">👉 functions</div>
+  <div class="example" onclick="loadExample(4)">👉 random</div>
+</div>
+
+<script>
+async function run() {
+  const code = document.getElementById("editor").value;
+  const input = document.getElementById("input").value;
+
+  const outputEl = document.getElementById("output");
+  outputEl.innerText = "⏳ running...";
+
+  try {
+    const res = await fetch("/run", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ code, input })
+    });
+
+    const data = await res.json();
+    outputEl.innerText = data.output;
+
+  } catch (e) {
+    outputEl.innerText = "💥 server error";
+  }
+}
+
+function clearOutput() {
+  document.getElementById("output").innerText = "";
+}
+
+// горячая клавиша
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.key === "Enter") {
+    run();
+  }
+});
+
+// примеры
+function loadExample(id) {
+  const editor = document.getElementById("editor");
+
+  if (id === 1) {
+    editor.value = `
+set x = 10
+add x 5
+sub x 3
+mul x 2
+div x 4
+show x
+`;
+  }
+
+  if (id === 2) {
+    editor.value = `
+loop 5 say "🔥 LOOP"
+`;
+  }
+
+  if (id === 3) {
+    editor.value = `
+func hello
+say "HELLO FROM FUNC"
+end
+
+call hello
+`;
+  }
+
+  if (id === 4) {
+    editor.value = `
+random r 1 10
+say "number = {r}"
+`;
+  }
+}
+</script>
+
+</body>
+</html>
